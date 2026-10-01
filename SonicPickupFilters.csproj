@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <NoWarn>$(NoWarn);CS8632</NoWarn>
+    <AssemblyName>SonicPickupFilters</AssemblyName>
+    <RootNamespace>SonicPickupFilters</RootNamespace>
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- Full Windows PDB: ScriptEngine (Mono.Cecil) throws SymbolsNotFoundException without a .pdb beside the DLL. -->
+    <DebugType>full</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <ValheimLibDir Condition="'$(ValheimLibDir)' == ''">E:\Scripts\Valheim Mods\Reqs</ValheimLibDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="$(ValheimLibDir)\*.dll">
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="ValidateValheimLibDir" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(ValheimLibDir)')" Text="Valheim library directory not found: $(ValheimLibDir)" />
+  </Target>
+</Project>

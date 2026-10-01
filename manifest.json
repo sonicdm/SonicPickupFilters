@@ -1,0 +1,11 @@
+{
+  "name": "SonicPickupFilters",
+  "version_number": "0.1.0",
+  "website_url": "https://github.com/sonicdm/SonicPickupFilters",
+  "description": "Per-item auto-pickup rules: Allow, Block, or Cap. In-game panel with search and category filter. Manual pickup still works.",
+  "author": "SonicDM",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2202",
+    "ValheimModding-Jotunn-2.23.0"
+  ]
+}
