@@ -30,20 +30,18 @@ E:\Scripts\Valheim Mods\Reqs
 Override with `-LibDir` on `build.ps1` / `package.ps1` / `release.ps1`.
 
 - Never commit those DLLs or the Reqs folder.
-- GitHub Actions only refreshes release notes from `CHANGELOG.md` on tag push.
+- CI compiles against pinned public Valheim/Jötunn refs. Tag publish uploads Hexium/Thunderstore after verify + all-pass `docs/test-matrix.md`.
 
 ## Build habits
 
 ```powershell
 .\build.ps1
-.\deploy-dev.ps1   # optional: copy Release DLL into Gale Default profile plugins\
+..\tools\dev.ps1 deploy
 ```
 
-After code changes, verify with `.\build.ps1` before finishing. Prefer **build only** while iterating — do not package/release unless asked.
+After code changes, verify with `.\build.ps1` before finishing. Prefer **build and ScriptEngine deploy** while iterating — do not package/release unless asked.
 
-**Normal install:** `deploy-dev.ps1` copies to `BepInEx/plugins/SonicPickupFilters/` and clears any `scripts\` copy. **Restart Valheim** to load (no hot-reload).
-
-ScriptEngine was a temporary local helper. To tear it down: `.\disable-scriptengine.ps1` (disables the plugin, unbinds reload key, turns off LoadOnStart/watcher). Re-enable later only if needed via `.\install-scriptengine.ps1`.
+`deploy-dev.ps1`, `install-scriptengine.ps1`, and `disable-scriptengine.ps1` in this folder only forward to `..\tools\dev.ps1`. Deploy uses ScriptEngine (`BepInEx\scripts`, F9). Pass `-Plugins` for a normal `plugins\SonicPickupFilters\` install that needs a restart. Do not put deploy logic back in this repo.
 
 Console: **`spf_dump`** — nearby Cap/Block dump without a rebuild.
 
@@ -55,7 +53,7 @@ When shipping, keep these aligned: `PluginVersion`, csproj `<Version>`, `manifes
 
 ## Install
 
-Do **not** copy the DLL into an r2modman profile. User installs themselves. Build output: `bin\Release\SonicPickupFilters.dll` and `dist\SonicPickupFilters.dll`.
+Do **not** hand-copy the DLL. `..\tools\dev.ps1 deploy` copies it for ScriptEngine testing. Build output: `bin\Release\SonicPickupFilters.dll` and `dist\SonicPickupFilters.dll`.
 
 ## Troubleshooting
 

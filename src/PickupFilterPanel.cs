@@ -39,20 +39,23 @@ namespace SonicPickupFilters
 
 		private const float ToggleSize = 28f;
 
-		private const float CapFieldW = 90f;
+		private const float CapFieldW = 100f;
 
 		private const float CapFieldH = 28f;
 
 		// Absolute column X (left-anchored) within each row — no LayoutGroup guessing.
+		// Layout: [icon][name........][Block][Cap][Qty]
 		private const float ColIconX = 8f;
 
 		private const float ColNameX = 44f;
 
-		private const float ColNameW = 540f;
+		private const float ColNameW = 480f;
 
-		private const float ColBlockX = 620f;
+		private const float ColBlockX = 540f;
 
-		private const float ColCapX = 720f;
+		private const float ColCapToggleX = 620f;
+
+		private const float ColCapQtyX = 690f;
 
 		private static readonly FieldInfo KnownMaterialField =
 			AccessTools.Field(typeof(Player), "m_knownMaterial");
@@ -118,6 +121,9 @@ namespace SonicPickupFilters
 
 		private static float _contentWidth = 900f;
 
+		/// <summary>When true, next RefreshContent jumps to top (open / search / tab / clear).</summary>
+		private static bool _resetScrollOnRefresh = true;
+
 		internal static bool IsOpen =>
 			(Object)(object)_panel != (Object)null && _panel.activeSelf;
 
@@ -161,6 +167,7 @@ namespace SonicPickupFilters
 			{
 				_viewTab = ViewTab.All;
 				EnsureCategoryOptions();
+				_resetScrollOnRefresh = true;
 				RefreshContent();
 			}
 			else
@@ -272,7 +279,7 @@ namespace SonicPickupFilters
 			GameObject hintGo = GUIManager.Instance.CreateText(
 				text: ModLocalization.Translate(
 					ModLocalization.Hint,
-					"Check Block to turn filtering on. Cap is optional — leave empty to never auto-pick, or type a max count. Cap alone (Block off) does nothing."),
+					"Block = never auto-pick. Cap = pick until the count (defaults to max stack — edit the number anytime)."),
 				parent: _panel.transform,
 				anchorMin: new Vector2(0.5f, 1f),
 				anchorMax: new Vector2(0.5f, 1f),
@@ -393,9 +400,12 @@ namespace SonicPickupFilters
 			_scrollRect.horizontal = false;
 			_scrollRect.vertical = true;
 			_scrollRect.movementType = ScrollRect.MovementType.Clamped;
-			_scrollRect.scrollSensitivity = 120f;
 			_scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
 			GUIManager.Instance.ApplyScrollRectStyle(_scrollRect);
+			// ApplyScrollRectStyle may reset sensitivity — set after.
+			_scrollRect.scrollSensitivity = 450f;
+			_scrollRect.inertia = true;
+			_scrollRect.decelerationRate = 0.135f;
 
 			if ((Object)(object)_scrollRect.viewport != (Object)null)
 			{
@@ -572,6 +582,7 @@ namespace SonicPickupFilters
 		{
 			_searchText = value ?? string.Empty;
 			SonicPickupFiltersPlugin.DebugLog("Search='" + _searchText + "'");
+			_resetScrollOnRefresh = true;
 			RefreshContent();
 		}
 
@@ -586,6 +597,7 @@ namespace SonicPickupFilters
 			string label = index >= 0 && index < _categoryLabels.Count ? _categoryLabels[index] : "?";
 			SonicPickupFiltersPlugin.DebugLog("Category dropdown → " + index + " (" + label + ")");
 			// Do NOT call Hide()/ClearOptions here. Defer content rebuild past list teardown.
+			_resetScrollOnRefresh = true;
 			_refreshReadyFrame = Time.frameCount + 2;
 			_refreshQueued = true;
 		}
@@ -600,6 +612,7 @@ namespace SonicPickupFilters
 			}
 
 			SetCategoryDropdownValue(0);
+			_resetScrollOnRefresh = true;
 			RefreshContent();
 		}
 
@@ -615,6 +628,7 @@ namespace SonicPickupFilters
 				SonicPickupFiltersPlugin.DebugLog("Tab " + tab + " with search still='" + _searchText + "'");
 			}
 
+			_resetScrollOnRefresh = true;
 			RefreshContent();
 		}
 
@@ -844,6 +858,14 @@ namespace SonicPickupFilters
 				return;
 			}
 
+			bool resetScroll = _resetScrollOnRefresh;
+			_resetScrollOnRefresh = false;
+			float savedNorm = 1f;
+			if (!resetScroll && (Object)(object)_scrollRect != (Object)null)
+			{
+				savedNorm = _scrollRect.verticalNormalizedPosition;
+			}
+
 			ClearContentChildren();
 
 			List<ItemDrop> known = GetKnownItems();
@@ -952,11 +974,22 @@ namespace SonicPickupFilters
 				80f);
 			_contentRoot.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, _contentWidth);
 			_contentRoot.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, preferred);
-			_contentRoot.anchoredPosition = Vector2.zero;
 			_contentRoot.localScale = Vector3.one;
 			if ((Object)(object)_scrollRect != (Object)null)
 			{
-				_scrollRect.verticalNormalizedPosition = 1f;
+				if (resetScroll)
+				{
+					_contentRoot.anchoredPosition = Vector2.zero;
+					_scrollRect.verticalNormalizedPosition = 1f;
+				}
+				else
+				{
+					_scrollRect.verticalNormalizedPosition = Mathf.Clamp01(savedNorm);
+				}
+			}
+			else
+			{
+				_contentRoot.anchoredPosition = Vector2.zero;
 			}
 
 			SonicPickupFiltersPlugin.DebugLog(
@@ -1256,16 +1289,16 @@ namespace SonicPickupFilters
 			}
 		}
 
-		private static void SetCapPlaceholder(InputField field, bool filterOn)
+		private static void SetCapPlaceholder(InputField field, bool capOn)
 		{
 			if ((Object)(object)field == (Object)null)
 			{
 				return;
 			}
 
-			string text = filterOn
-				? ModLocalization.Translate(ModLocalization.CapPlaceholderOn, "∞ block")
-				: ModLocalization.Translate(ModLocalization.CapPlaceholderOff, "need Block");
+			string text = capOn
+				? ModLocalization.Translate(ModLocalization.CapPlaceholderOn, "max stack")
+				: ModLocalization.Translate(ModLocalization.CapPlaceholderOff, "check Cap");
 
 			if ((Object)(object)field.placeholder != (Object)null)
 			{
@@ -1380,27 +1413,40 @@ namespace SonicPickupFilters
 				row.transform,
 				ModLocalization.Translate(ModLocalization.ColBlock, "Block"),
 				ColBlockX,
-				ToggleSize + 24f,
+				ToggleSize + 16f,
 				TextAnchor.MiddleCenter);
 			AttachTooltip(
 				blockLabel,
 				ModLocalization.Translate(ModLocalization.TipBlockTopic, "Block"),
 				ModLocalization.Translate(
 					ModLocalization.TipBlockBody,
-					"Turns filtering on. Off = vanilla pickup. On + empty Cap = never pick. On + Cap = pick until count."));
+					"Never auto-pick this item. Manual Use still works. Mutually exclusive with Cap."));
 
 			GameObject capLabel = PlaceHeaderLabel(
 				row.transform,
 				ModLocalization.Translate(ModLocalization.ColCap, "Cap"),
-				ColCapX,
-				CapFieldW,
+				ColCapToggleX,
+				ToggleSize + 16f,
 				TextAnchor.MiddleCenter);
 			AttachTooltip(
 				capLabel,
 				ModLocalization.Translate(ModLocalization.TipCapTopic, "Cap"),
 				ModLocalization.Translate(
 					ModLocalization.TipCapBody,
-					"Only works while Block is checked. Empty = full block. Number = max auto-pickup count."));
+					"Check Cap to limit auto-pickup. Defaults to the item's max stack — change Qty afterward."));
+
+			GameObject qtyLabel = PlaceHeaderLabel(
+				row.transform,
+				ModLocalization.Translate(ModLocalization.ColCapQty, "Qty"),
+				ColCapQtyX,
+				CapFieldW,
+				TextAnchor.MiddleCenter);
+			AttachTooltip(
+				qtyLabel,
+				ModLocalization.Translate(ModLocalization.TipCapQtyTopic, "Qty"),
+				ModLocalization.Translate(
+					ModLocalization.TipCapQtyBody,
+					"Max auto-pickup count while Cap is checked. Empty/invalid restores max stack."));
 		}
 
 		private static GameObject PlaceHeaderLabel(
@@ -1477,7 +1523,9 @@ namespace SonicPickupFilters
 				fullName = prefab;
 			}
 
-			bool filterOn = rule.Mode == PickupRuleMode.Block || rule.Mode == PickupRuleMode.Cap;
+			int defaultCap = GetDefaultCap(item);
+			bool blockOn = rule.Mode == PickupRuleMode.Block;
+			bool capOn = rule.Mode == PickupRuleMode.Cap;
 
 			GameObject row = new GameObject("Row_" + prefab, typeof(RectTransform), typeof(LayoutElement), typeof(Image));
 			row.transform.SetParent(parent, false);
@@ -1522,22 +1570,31 @@ namespace SonicPickupFilters
 			}
 
 			// Jötunn CreateToggle parents with worldPositionStays=true — reparent false + scale=1.
-			GameObject toggleGo = GUIManager.Instance.CreateToggle(row.transform, ToggleSize, ToggleSize);
-			toggleGo.name = "BlockToggle";
-			FixJotunnToggle(toggleGo, row.transform, ColBlockX + ToggleSize * 0.5f, 0f, ToggleSize);
-			Toggle blockToggle = toggleGo.GetComponent<Toggle>();
+			GameObject blockToggleGo = GUIManager.Instance.CreateToggle(row.transform, ToggleSize, ToggleSize);
+			blockToggleGo.name = "BlockToggle";
+			FixJotunnToggle(blockToggleGo, row.transform, ColBlockX + ToggleSize * 0.5f, 0f, ToggleSize);
+			Toggle blockToggle = blockToggleGo.GetComponent<Toggle>();
 			if ((Object)(object)blockToggle != (Object)null)
 			{
 				GUIManager.Instance.ApplyToogleStyle(blockToggle);
+			}
+
+			GameObject capToggleGo = GUIManager.Instance.CreateToggle(row.transform, ToggleSize, ToggleSize);
+			capToggleGo.name = "CapToggle";
+			FixJotunnToggle(capToggleGo, row.transform, ColCapToggleX + ToggleSize * 0.5f, 0f, ToggleSize);
+			Toggle capToggle = capToggleGo.GetComponent<Toggle>();
+			if ((Object)(object)capToggle != (Object)null)
+			{
+				GUIManager.Instance.ApplyToogleStyle(capToggle);
 			}
 
 			GameObject capInputGo = GUIManager.Instance.CreateInputField(
 				parent: row.transform,
 				anchorMin: new Vector2(0f, 0.5f),
 				anchorMax: new Vector2(0f, 0.5f),
-				position: new Vector2(ColCapX + CapFieldW * 0.5f, 0f),
+				position: new Vector2(ColCapQtyX + CapFieldW * 0.5f, 0f),
 				contentType: InputField.ContentType.IntegerNumber,
-				placeholderText: filterOn ? "∞" : string.Empty,
+				placeholderText: string.Empty,
 				fontSize: 14,
 				width: CapFieldW,
 				height: CapFieldH);
@@ -1547,18 +1604,67 @@ namespace SonicPickupFilters
 			if ((Object)(object)capInput != (Object)null)
 			{
 				GUIManager.Instance.ApplyInputFieldStyle(capInput, 14);
-				capInput.interactable = filterOn;
+				capInput.interactable = capOn;
 			}
 
 			string capturedPrefab = prefab;
+			int capturedDefaultCap = defaultCap;
 			Image capturedIcon = icon;
-			Toggle capturedToggle = blockToggle;
+			Toggle capturedBlock = blockToggle;
+			Toggle capturedCapToggle = capToggle;
 			InputField capturedCap = capInput;
 
 			bool suppress = true;
+
+			void ApplyAllow()
+			{
+				PickupRuleStore.SetRule(capturedPrefab, PickupRule.Allow);
+				TintIcon(capturedIcon, ColNormal);
+				if ((Object)(object)capturedCap != (Object)null)
+				{
+					capturedCap.interactable = false;
+					capturedCap.text = string.Empty;
+					SetCapPlaceholder(capturedCap, false);
+				}
+			}
+
+			void ApplyBlock()
+			{
+				PickupRuleStore.SetRule(capturedPrefab, PickupRule.Block);
+				TintIcon(capturedIcon, ColBlocked);
+				if ((Object)(object)capturedCap != (Object)null)
+				{
+					capturedCap.interactable = false;
+					capturedCap.text = string.Empty;
+					SetCapPlaceholder(capturedCap, false);
+				}
+			}
+
+			void ApplyCap(int amount)
+			{
+				int cap = Math.Max(1, amount);
+				PickupRuleStore.SetRule(capturedPrefab, PickupRule.CapAt(cap));
+				TintIcon(capturedIcon, ColCapped);
+				if ((Object)(object)capturedCap != (Object)null)
+				{
+					capturedCap.interactable = true;
+					capturedCap.text = cap.ToString();
+					SetCapPlaceholder(capturedCap, true);
+				}
+			}
+
+			void AfterRuleChange()
+			{
+				UpdateTabLabels();
+				if (_viewTab != ViewTab.All)
+				{
+					_refreshQueued = true;
+				}
+			}
+
 			if ((Object)(object)blockToggle != (Object)null)
 			{
-				blockToggle.isOn = filterOn;
+				blockToggle.isOn = blockOn;
 				blockToggle.onValueChanged.AddListener(isOn =>
 				{
 					if (suppress)
@@ -1566,59 +1672,76 @@ namespace SonicPickupFilters
 						return;
 					}
 
+					suppress = true;
 					if (isOn)
 					{
-						if ((Object)(object)capturedCap != (Object)null)
+						if ((Object)(object)capturedCapToggle != (Object)null)
 						{
-							capturedCap.interactable = true;
-							SetCapPlaceholder(capturedCap, true);
-							if (int.TryParse(capturedCap.text, out int existing) && existing > 0)
-							{
-								PickupRuleStore.SetRule(capturedPrefab, PickupRule.CapAt(existing));
-								TintIcon(capturedIcon, ColCapped);
-							}
-							else
-							{
-								suppress = true;
-								capturedCap.text = string.Empty;
-								suppress = false;
-								PickupRuleStore.SetRule(capturedPrefab, PickupRule.Block);
-								TintIcon(capturedIcon, ColBlocked);
-							}
+							capturedCapToggle.isOn = false;
 						}
-						else
-						{
-							PickupRuleStore.SetRule(capturedPrefab, PickupRule.Block);
-							TintIcon(capturedIcon, ColBlocked);
-						}
+
+						ApplyBlock();
+					}
+					else if ((Object)(object)capturedCapToggle != (Object)null && capturedCapToggle.isOn)
+					{
+						// Cap still on — keep Cap mode.
 					}
 					else
 					{
-						PickupRuleStore.SetRule(capturedPrefab, PickupRule.Allow);
-						if ((Object)(object)capturedCap != (Object)null)
+						ApplyAllow();
+					}
+
+					suppress = false;
+					AfterRuleChange();
+				});
+			}
+
+			if ((Object)(object)capToggle != (Object)null)
+			{
+				capToggle.isOn = capOn;
+				capToggle.onValueChanged.AddListener(isOn =>
+				{
+					if (suppress)
+					{
+						return;
+					}
+
+					suppress = true;
+					if (isOn)
+					{
+						if ((Object)(object)capturedBlock != (Object)null)
 						{
-							suppress = true;
-							capturedCap.text = string.Empty;
-							capturedCap.interactable = false;
-							SetCapPlaceholder(capturedCap, false);
-							suppress = false;
+							capturedBlock.isOn = false;
 						}
 
-						TintIcon(capturedIcon, ColNormal);
+						int amount = capturedDefaultCap;
+						if ((Object)(object)capturedCap != (Object)null &&
+						    int.TryParse(capturedCap.text, out int existing) &&
+						    existing > 0)
+						{
+							amount = existing;
+						}
+
+						ApplyCap(amount);
+					}
+					else if ((Object)(object)capturedBlock != (Object)null && capturedBlock.isOn)
+					{
+						ApplyBlock();
+					}
+					else
+					{
+						ApplyAllow();
 					}
 
-					UpdateTabLabels();
-					if (_viewTab != ViewTab.All)
-					{
-						_refreshQueued = true;
-					}
+					suppress = false;
+					AfterRuleChange();
 				});
 			}
 
 			if ((Object)(object)capInput != (Object)null)
 			{
-				capInput.text = rule.Mode == PickupRuleMode.Cap ? rule.Cap.ToString() : string.Empty;
-				SetCapPlaceholder(capInput, filterOn);
+				capInput.text = capOn ? rule.Cap.ToString() : string.Empty;
+				SetCapPlaceholder(capInput, capOn);
 				capInput.onEndEdit.AddListener(text =>
 				{
 					if (suppress)
@@ -1626,7 +1749,7 @@ namespace SonicPickupFilters
 						return;
 					}
 
-					if ((Object)(object)capturedToggle == (Object)null || !capturedToggle.isOn)
+					if ((Object)(object)capturedCapToggle == (Object)null || !capturedCapToggle.isOn)
 					{
 						suppress = true;
 						capturedCap.text = string.Empty;
@@ -1637,28 +1760,23 @@ namespace SonicPickupFilters
 
 					if (string.IsNullOrWhiteSpace(text))
 					{
-						PickupRuleStore.SetRule(capturedPrefab, PickupRule.Block);
-						TintIcon(capturedIcon, ColBlocked);
+						// Empty while Cap is on → restore default (max stack), do not fall back to Block.
+						suppress = true;
+						ApplyCap(capturedDefaultCap);
+						suppress = false;
 					}
 					else if (int.TryParse(text, out int capVal) && capVal > 0)
 					{
-						PickupRuleStore.SetRule(capturedPrefab, PickupRule.CapAt(capVal));
-						TintIcon(capturedIcon, ColCapped);
+						ApplyCap(capVal);
 					}
 					else
 					{
 						suppress = true;
-						capturedCap.text = string.Empty;
+						ApplyCap(capturedDefaultCap);
 						suppress = false;
-						PickupRuleStore.SetRule(capturedPrefab, PickupRule.Block);
-						TintIcon(capturedIcon, ColBlocked);
 					}
 
-					UpdateTabLabels();
-					if (_viewTab != ViewTab.All)
-					{
-						_refreshQueued = true;
-					}
+					AfterRuleChange();
 				});
 			}
 

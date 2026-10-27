@@ -10,7 +10,7 @@ Valheim BepInEx mod for per-item auto-pickup rules: **Allow**, **Block**, or **C
 | Plugin name | `Sonic Pickup Filters` |
 | Plugin GUID | `com.sonicdm.valheim.sonicpickupfilters` |
 | Assembly | `SonicPickupFilters.dll` |
-| Version | `0.1.0` |
+| Version | `0.1.1` |
 | Config file | `BepInEx/config/com.sonicdm.valheim.sonicpickupfilters.cfg` |
 | Source | https://github.com/sonicdm/SonicPickupFilters |
 
@@ -30,6 +30,7 @@ Valheim BepInEx mod for per-item auto-pickup rules: **Allow**, **Block**, or **C
 - `[General]` Enabled, DebugLogging
 - `[Rules]` ItemRules (`Prefab:0` = Block, `Prefab:N` = Cap), DefaultCapUsesMaxStack
 - `[UI]` ToggleKey, InventoryBlockModifier
+- `[General]` AutoReloadConfig (reload `.cfg` while in-game), Enabled (auto-pickup only — UI/hotkey always work)
 
 Example `ItemRules`:
 

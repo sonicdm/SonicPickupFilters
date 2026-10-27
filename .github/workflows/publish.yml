@@ -1,0 +1,200 @@
+# Tag vX.Y.Z: verify build + tests + all-pass test matrix, then publish zip and GitHub notes.
+# Tokens stay in Actions secrets. A green compile is not an in-game check.
+
+name: Publish
+run-name: Publish ${{ github.ref_name }}
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      name: ${{ steps.meta.outputs.name }}
+      description: ${{ steps.meta.outputs.description }}
+      zip_name: ${{ steps.meta.outputs.zip_name }}
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+      VALHEIM_REFS: ${{ github.workspace }}/valheim-refs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.425"
+
+      - name: Setup Valheim compile refs
+        uses: ./.github/actions/setup-refs
+        with:
+          refs-dir: ${{ env.VALHEIM_REFS }}
+
+      - name: Read manifest and check tag
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(python3 -c "import json; print(json.load(open('manifest.json'))['version_number'])")
+          NAME=$(python3 -c "import json; print(json.load(open('manifest.json'))['name'])")
+          DESCRIPTION=$(python3 -c "import json; print(json.load(open('manifest.json'))['description'])")
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" != "v$VERSION" ]]; then
+            echo "Tag $TAG must be v$VERSION (manifest version_number)" >&2
+            exit 1
+          fi
+          python3 .github/scripts/verify-test-matrix.py --version "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "description=$DESCRIPTION" >> "$GITHUB_OUTPUT"
+          echo "zip_name=$NAME-$VERSION.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore SonicPickupFilters.sln --nologo
+
+      - name: Build plugin
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet build SonicPickupFilters.csproj \
+            --configuration Release \
+            --nologo \
+            -p:ValheimLibDir="$VALHEIM_REFS"
+
+      - name: Run tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test SonicPickupFilters.sln \
+            --configuration Release \
+            --nologo
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-dll
+          path: bin/Release/SonicPickupFilters.dll
+          if-no-files-found: error
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      VALHEIM_REFS: ${{ github.workspace }}/valheim-refs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Valheim compile refs
+        uses: ./.github/actions/setup-refs
+        with:
+          refs-dir: ${{ env.VALHEIM_REFS }}
+
+      - name: Download plugin
+        uses: actions/download-artifact@v4
+        with:
+          name: plugin-dll
+          path: bin/Release
+
+      - name: Package Thunderstore zip
+        shell: pwsh
+        run: |
+          ./package.ps1 -SkipBuild -LibDir $env:VALHEIM_REFS -Configuration Release
+          $zip = "dist/$($env:ZIP_NAME)"
+          if (-not (Test-Path -LiteralPath $zip)) { throw "Missing $zip" }
+        env:
+          ZIP_NAME: ${{ needs.verify.outputs.zip_name }}
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: thunderstore-zip
+          path: dist/${{ needs.verify.outputs.zip_name }}
+          if-no-files-found: error
+
+      # GreenTF/upload-thunderstore-package@v4.3 ignores `repo` and always hits
+      # thunderstore.io, so Hexium uploads must use tcli directly.
+      - name: Install tcli
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=0.2.4
+          curl -fsSL "https://github.com/thunderstore-io/thunderstore-cli/releases/download/${VERSION}/tcli-${VERSION}-linux-x64.tar.gz" \
+            | tar -xz
+          sudo install -m 0755 "tcli-${VERSION}-linux-x64/tcli" /usr/local/bin/tcli
+
+      - name: Write thunderstore.toml
+        env:
+          PKG_NAME: ${{ needs.verify.outputs.name }}
+          PKG_VERSION: ${{ needs.verify.outputs.version }}
+          PKG_DESCRIPTION: ${{ needs.verify.outputs.description }}
+        run: python3 .github/scripts/write-thunderstore-toml.py
+      - name: Publish to Hexium
+        env:
+          TCLI_AUTH_TOKEN: ${{ secrets.HEXIUM_TOKEN }}
+        run: tcli publish --repository https://hexium.gg --file "dist/${{ needs.verify.outputs.zip_name }}"
+
+      - name: Publish to Thunderstore
+        env:
+          TCLI_AUTH_TOKEN: ${{ secrets.THUNDERSTORE_TOKEN }}
+        run: tcli publish --repository https://thunderstore.io --file "dist/${{ needs.verify.outputs.zip_name }}"
+
+
+  release-notes:
+    needs: [verify, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract changelog for tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.verify.outputs.version }}"
+          python3 <<'PY'
+          import pathlib, os, re, sys
+          version = os.environ["VERSION"]
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          pattern = rf"(?ms)^## {re.escape(version)}\s*\n(.*?)(?=^##\s+\d+\.\d+\.\d+\s*$|\Z)"
+          m = re.search(pattern, text)
+          if not m:
+              sys.exit(f"CHANGELOG.md missing section ## {version}")
+          body = (
+              f"## {version}\n{m.group(1).strip()}\n\n"
+              "---\n"
+              "Published to Hexium and Thunderstore by GitHub Actions after verify.\n"
+          )
+          pathlib.Path("release_notes.md").write_text(body, encoding="utf-8")
+          print(body)
+          PY
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: thunderstore-zip
+          path: dist
+
+      - name: Publish / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Sonic Pickup Filters ${{ needs.verify.outputs.version }}
+          body_path: release_notes.md
+          files: dist/${{ needs.verify.outputs.zip_name }}
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true

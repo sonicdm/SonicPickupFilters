@@ -1,0 +1,83 @@
+# Compile and test against pinned public Valheim/Jötunn reference DLLs.
+# A green run is not an in-game check. Tag only after docs/test-matrix.md is all pass.
+# Store publishing lives in publish.yml on v* tags.
+
+name: Build and test
+run-name: Build and test (${{ github.ref_name }})
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+      VALHEIM_REFS: ${{ github.workspace }}/valheim-refs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.425"
+
+      - name: Cache NuGet dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Setup Valheim compile refs
+        uses: ./.github/actions/setup-refs
+        with:
+          refs-dir: ${{ env.VALHEIM_REFS }}
+
+      - name: Restore
+        run: dotnet restore SonicPickupFilters.sln --nologo
+
+      - name: Build plugin
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet build SonicPickupFilters.csproj \
+            --configuration Release \
+            --nologo \
+            -p:ValheimLibDir="$VALHEIM_REFS"
+
+      - name: Run tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test SonicPickupFilters.sln \
+            --configuration Release \
+            --nologo \
+            --logger "trx;LogFileName=tests.trx" \
+            --results-directory "$RUNNER_TEMP/test-results"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ${{ runner.temp }}/test-results/*.trx
+          if-no-files-found: warn
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: SonicPickupFilters-plugin
+          path: bin/Release/SonicPickupFilters.dll
+          if-no-files-found: error

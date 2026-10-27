@@ -311,6 +311,7 @@ namespace SonicPickupFilters
 			}
 
 			_config.Value = sb.ToString();
+			SonicPickupFiltersPlugin.AcknowledgeConfigWrite();
 		}
 	}
 }

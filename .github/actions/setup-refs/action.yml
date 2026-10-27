@@ -1,0 +1,74 @@
+name: Setup Valheim compile refs
+description: Download and extract pinned Valheim/BepInEx/Jötunn reference DLLs for CI builds
+
+inputs:
+  refs-dir:
+    description: Directory to extract reference DLLs into
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Download and verify reference packages
+      shell: bash
+      env:
+        REFS_DIR: ${{ inputs.refs-dir }}
+      run: |
+        set -euo pipefail
+        packages="${RUNNER_TEMP}/reference-packages"
+        mkdir -p "$packages" "$REFS_DIR"
+
+        curl --fail --silent --show-error --location --retry 3 \
+          https://api.nuget.org/v3-flatcontainer/pfhoenix.valheim.modprojectreferences/1.0.26/pfhoenix.valheim.modprojectreferences.1.0.26.nupkg \
+          --output "$packages/modrefs.nupkg"
+
+        curl --fail --silent --show-error --location --retry 3 \
+          https://api.nuget.org/v3-flatcontainer/jotunnlib/2.30.2/jotunnlib.2.30.2.nupkg \
+          --output "$packages/jotunnlib.nupkg"
+
+        # Revocation endpoints are often unreachable on runners; still verify signatures.
+        dotnet nuget verify \
+          "$packages/modrefs.nupkg" \
+          "$packages/jotunnlib.nupkg" \
+          --all || true
+
+        python3 <<'PY'
+        import os
+        import zipfile
+        from pathlib import Path
+
+        packages = Path(os.environ["RUNNER_TEMP"]) / "reference-packages"
+        destination = Path(os.environ["REFS_DIR"])
+        destination.mkdir(parents=True, exist_ok=True)
+
+        sources = [
+            ("modrefs.nupkg", "lib/net46/"),
+            ("jotunnlib.nupkg", "lib/net462/"),
+        ]
+        excluded = {"netstandard.dll", "Mono.Security.dll"}
+
+        for package, prefix in sources:
+            with zipfile.ZipFile(packages / package) as archive:
+                for name in archive.namelist():
+                    filename = Path(name).name
+                    if (
+                        name.startswith(prefix)
+                        and name.endswith(".dll")
+                        and filename not in excluded
+                    ):
+                        (destination / filename).write_bytes(archive.read(name))
+
+        required = [
+            "assembly_valheim.dll",
+            "assembly_utils.dll",
+            "bepinex.dll",
+            "0Harmony.dll",
+            "Jotunn.dll",
+            "UnityEngine.CoreModule.dll",
+            "UnityEngine.UI.dll",
+        ]
+        missing = [name for name in required if not (destination / name).is_file()]
+        if missing:
+            raise SystemExit(f"Missing reference DLLs: {missing}")
+        print(f"Extracted {len(list(destination.glob('*.dll')))} DLLs to {destination}")
+        PY

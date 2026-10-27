@@ -32,6 +32,8 @@ namespace SonicPickupFilters
 
 		internal const string ColCap = "$sonic_pickupfilters_col_cap";
 
+		internal const string ColCapQty = "$sonic_pickupfilters_col_cap_qty";
+
 		internal const string TipBlockTopic = "$sonic_pickupfilters_tip_block_topic";
 
 		internal const string TipBlockBody = "$sonic_pickupfilters_tip_block_body";
@@ -39,6 +41,10 @@ namespace SonicPickupFilters
 		internal const string TipCapTopic = "$sonic_pickupfilters_tip_cap_topic";
 
 		internal const string TipCapBody = "$sonic_pickupfilters_tip_cap_body";
+
+		internal const string TipCapQtyTopic = "$sonic_pickupfilters_tip_cap_qty_topic";
+
+		internal const string TipCapQtyBody = "$sonic_pickupfilters_tip_cap_qty_body";
 
 		internal const string TipItemTopic = "$sonic_pickupfilters_tip_item_topic";
 
@@ -63,7 +69,7 @@ namespace SonicPickupFilters
 				{ "sonic_pickupfilters_title", "Pickup Filter" },
 				{
 					"sonic_pickupfilters_hint",
-					"Check Block to turn filtering on. Cap is optional — leave empty to never auto-pick, or type a max count. Cap alone (Block off) does nothing."
+					"Block = never auto-pick. Cap = pick until the count (check Cap to start at max stack, then edit the number)."
 				},
 				{ "sonic_pickupfilters_search", "Search items…" },
 				{ "sonic_pickupfilters_cat_all", "All categories" },
@@ -76,23 +82,29 @@ namespace SonicPickupFilters
 				{ "sonic_pickupfilters_col_item", "Item" },
 				{ "sonic_pickupfilters_col_block", "Block" },
 				{ "sonic_pickupfilters_col_cap", "Cap" },
+				{ "sonic_pickupfilters_col_cap_qty", "Qty" },
 				{ "sonic_pickupfilters_tip_block_topic", "Block" },
 				{
 					"sonic_pickupfilters_tip_block_body",
-					"Turns filtering on for this item.\nOff = vanilla auto-pickup (Cap ignored).\nOn + empty Cap = never auto-pick.\nOn + Cap number = auto-pick until that count."
+					"Never auto-pick this item.\nManual Use still works.\nTurning Block on turns Cap off."
 				},
 				{ "sonic_pickupfilters_tip_cap_topic", "Cap" },
 				{
 					"sonic_pickupfilters_tip_cap_body",
-					"Only works while Block is checked.\nEmpty Cap = full block (never auto-pick).\nNumber = keep auto-picking until you hold that many.\nCap with Block unchecked does nothing."
+					"Check Cap to limit auto-pickup.\nFills Qty with max stack.\nTurning Cap on turns Block off."
+				},
+				{ "sonic_pickupfilters_tip_cap_qty_topic", "Qty" },
+				{
+					"sonic_pickupfilters_tip_cap_qty_body",
+					"Max auto-pickup count while Cap is checked.\nEmpty/invalid restores max stack."
 				},
 				{ "sonic_pickupfilters_tip_item_topic", "Item" },
 				{
 					"sonic_pickupfilters_tip_item_body",
-					"Discovered items from your world. Use Block + Cap to control auto-pickup. Manual Use still works when blocked."
+					"Discovered items from your world. Use Block or Cap to control auto-pickup. Manual Use still works when blocked."
 				},
-				{ "sonic_pickupfilters_cap_ph_off", "need Block" },
-				{ "sonic_pickupfilters_cap_ph_on", "∞ block" }
+				{ "sonic_pickupfilters_cap_ph_off", "—" },
+				{ "sonic_pickupfilters_cap_ph_on", "max" }
 			});
 		}
 

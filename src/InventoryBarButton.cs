@@ -55,7 +55,8 @@ namespace SonicPickupFilters
 
 		internal static void TryInject(InventoryGui __instance)
 		{
-			if (!SonicPickupFiltersPlugin.IsModEnabled() || GUIManagerMissing())
+			// Always inject — panel/hotkey work even when General.Enabled is off (configure then enable).
+			if (GUIManagerMissing())
 			{
 				return;
 			}
